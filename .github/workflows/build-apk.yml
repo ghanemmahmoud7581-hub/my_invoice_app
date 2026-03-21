@@ -118,54 +118,27 @@ jobs:
       run: |
         sudo apt-get install -y pigz
 
-        echo "⬇️ تحميل Python standalone..."
+        echo "تحميل Python standalone..."
         wget -q --retry-connrefused --waitretry=10 --tries=5 \
           --timeout=180 \
           "${{ env.PYTHON_STANDALONE_URL }}" \
           -O "/tmp/${{ env.PYTHON_STANDALONE_TAR }}"
-        echo "✅ تم التحميل: $(du -sh /tmp/${{ env.PYTHON_STANDALONE_TAR }} | cut -f1)"
+        echo "تم التحميل: $(du -sh /tmp/${{ env.PYTHON_STANDALONE_TAR }} | cut -f1)"
 
-        echo "📦 فك الضغط بـ pigz..."
+        echo "فك الضغط بـ pigz..."
         mkdir -p /tmp/hostpython3.11_ready
         pigz -dc "/tmp/${{ env.PYTHON_STANDALONE_TAR }}" | tar -x -C /tmp/hostpython3.11_ready
-        echo "✅ تم فك الضغط: $(du -sh /tmp/hostpython3.11_ready | cut -f1)"
+        echo "تم فك الضغط: $(du -sh /tmp/hostpython3.11_ready | cut -f1)"
 
-        echo "🔧 كتابة ملف الـ patch..."
-        SITE_PKG=$(python -c "import site; print(site.getsitepackages()[0])")
-        
-        python -c "
-        import os
-        site_pkg = os.popen('python -c \"import site; print(site.getsitepackages()[0])\"').read().strip()
-        patch = '''
-import tarfile as _tarfile
-import shutil as _shutil
-import os as _os
-
-_orig_extractall = _tarfile.TarFile.extractall
-
-def _fast_extractall(self, path=\".\", members=None, **kwargs):
-    prebuilt = \"/tmp/hostpython3.11_ready\"
-    if _os.path.isdir(prebuilt) and \"hostpython3.11\" in str(path):
-        print(f\"⚡ نسخ من المفكوك مسبقاً إلى {path}\")
-        if _os.path.exists(path):
-            _shutil.rmtree(path)
-        _shutil.copytree(prebuilt, path)
-        print(\"✅ تم النسخ السريع\")
-        return
-    _orig_extractall(self, path, members, **kwargs)
-
-_tarfile.TarFile.extractall = _fast_extractall
-'''
-        with open(os.path.join(site_pkg, 'sitecustomize.py'), 'a') as f:
-            f.write(patch)
-        print('✅ تم تطبيق الـ patch')
-        "
+        echo "تطبيق الـ patch..."
+        python .github/scripts/patch_tarfile.py
+        echo "تم تطبيق الـ patch بنجاح"
 
     - name: 🏗️ بناء APK
       run: |
         cd src
         BUILD_TYPE="${{ github.event.inputs.build_type || 'debug' }}"
-        echo "📱 بناء APK نوع: $BUILD_TYPE"
+        echo "بناء APK نوع: $BUILD_TYPE"
         if [ "$BUILD_TYPE" = "release" ]; then
           flet build apk --release --verbose
         else
@@ -174,7 +147,7 @@ _tarfile.TarFile.extractall = _fast_extractall
 
     - name: 🔍 البحث عن ملف APK
       run: |
-        echo "📂 ملفات APK الموجودة:"
+        echo "ملفات APK الموجودة:"
         find src -name "*.apk" -type f
 
     - name: 📤 رفع ملف APK
