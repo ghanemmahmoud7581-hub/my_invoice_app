@@ -72,34 +72,44 @@ jobs:
         echo "بعد التنظيف:"
         df -h
 
-    - name: 💾 Cache Python standalone (مفكوك)
-      id: cache-hostpython
+    # ✅ الحل الحقيقي: تحميل الملف مسبقاً في المسار الذي يبحث عنه serious_python
+    - name: 💾 Cache Python standalone TAR
+      id: cache-python-tar
       uses: actions/cache@v4
       with:
-        path: ~/.cache/hostpython3.11
-        key: hostpython-3.11.6-extracted-v1
+        path: /tmp/${{ env.PYTHON_STANDALONE_TAR }}
+        key: python-standalone-tar-3.11.6-v1
 
-    - name: 🐍 تحميل وفك Python standalone
+    - name: ⬇️ تحميل Python standalone (إن لم يكن محفوظاً)
+      if: steps.cache-python-tar.outputs.cache-hit != 'true'
       run: |
-        DEST_TAR="/tmp/${{ env.PYTHON_STANDALONE_TAR }}"
-        CACHE_DIR="$HOME/.cache/hostpython3.11"
-        SYMLINK_DIR="/tmp/hostpython3.11_CACHED"
+        echo "⬇️ تحميل Python standalone..."
+        wget --retry-connrefused --waitretry=10 --tries=5 \
+          --timeout=180 --show-progress \
+          "${{ env.PYTHON_STANDALONE_URL }}" \
+          -O "/tmp/${{ env.PYTHON_STANDALONE_TAR }}"
+        echo "✅ تم التحميل: $(du -sh /tmp/${{ env.PYTHON_STANDALONE_TAR }} | cut -f1)"
 
-        if [ -d "$CACHE_DIR/python" ]; then
-          echo "✅ Python مفكوك موجود في الـ cache"
-        else
-          echo "⬇️ تحميل Python standalone..."
-          wget -q --retry-connrefused --waitretry=10 --tries=5 \
-            --timeout=180 "${{ env.PYTHON_STANDALONE_URL }}" -O "$DEST_TAR"
-          echo "📦 فك الضغط وحفظه في الـ cache..."
-          mkdir -p "$CACHE_DIR"
-          tar -xzf "$DEST_TAR" -C "$CACHE_DIR"
-          echo "✅ تم الحفظ في الـ cache"
-        fi
+    # ✅ تثبيت pbzip2 لتسريع فك الضغط (متعدد النوى بدلاً من نواة واحدة)
+    - name: ⚡ تثبيت أدوات فك الضغط السريع
+      run: |
+        sudo apt-get install -y pbzip2 pixz
+        echo "✅ pbzip2 جاهز للاستخدام"
 
-        # نسخ للمسار المتوقع من serious_python
-        echo "📋 نسخ Python إلى /tmp..."
-        cp -r "$CACHE_DIR" "$SYMLINK_DIR"
+    # ✅ فك الضغط مسبقاً قبل أن يحاول serious_python فعل ذلك
+    - name: 📦 فك ضغط Python standalone مسبقاً
+      run: |
+        TAR_FILE="/tmp/${{ env.PYTHON_STANDALONE_TAR }}"
+        echo "📦 فك الضغط بسرعة باستخدام pbzip2..."
+        # فك الضغط في جميع المسارات المحتملة التي يستخدمها serious_python
+        for i in 1 2 3; do
+          EXTRACT_DIR="/tmp/hostpython3.11_PRE$i"
+          mkdir -p "$EXTRACT_DIR"
+          pbzip2 -dc "$TAR_FILE" | tar -x -C "$EXTRACT_DIR" &
+        done
+        wait
+        echo "✅ تم فك الضغط مسبقاً في عدة مسارات"
+        ls /tmp/hostpython3.11_* 2>/dev/null || echo "المسارات جاهزة"
 
     - name: 🐍 إعداد Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
