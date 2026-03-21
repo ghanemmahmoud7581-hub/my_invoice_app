@@ -1,5 +1,4 @@
 name: بناء APK تلقائي
-
 on:
   push:
     branches: [ main, master ]
@@ -19,7 +18,6 @@ on:
           - debug
           - release
 
-# ✅ إضافة الصلاحيات اللازمة
 permissions:
   contents: write
   actions: write
@@ -27,13 +25,13 @@ permissions:
 env:
   PYTHON_VERSION: '3.11'
   JAVA_VERSION: '17'
-  FLUTTER_VERSION: '3.24.0'
+  FLUTTER_VERSION: '3.41.5'
 
 jobs:
   build-android-apk:
     name: بناء APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90  # ✅ زيادة المهلة
 
     steps:
     - name: 📥 سحب الكود من المستودع
@@ -41,7 +39,7 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: 🗑️ حذف الـ Artifacts القديمة لتوفير المساحة
+    - name: 🗑️ حذف الـ Artifacts القديمة
       uses: actions/github-script@v7
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -60,6 +58,34 @@ jobs:
             });
           }
           console.log(`✅ تم حذف ${artifacts.data.artifacts.length} artifact قديمة`);
+
+    # ✅ إضافة: تخزين مؤقت لـ Python المستقل (الإصلاح الرئيسي)
+    - name: 💾 Cache Python standalone distributive
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/serious_python
+        key: cpython-3.11.6-standalone-v1
+
+    # ✅ إضافة: تحميل Python المستقل مسبقاً لتجنب انتهاء المهلة
+    - name: 🐍 تحميل Python standalone مسبقاً
+      run: |
+        PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20231002/cpython-3.11.6+20231002-x86_64-unknown-linux-gnu-install_only.tar.gz"
+        DEST="/tmp/cpython-3.11.6+20231002-x86_64-unknown-linux-gnu-install_only.tar.gz"
+        CACHE_DIR="$HOME/.cache/serious_python"
+        CACHE_FILE="$CACHE_DIR/$(basename $PYTHON_URL)"
+
+        mkdir -p "$CACHE_DIR"
+
+        if [ -f "$CACHE_FILE" ]; then
+          echo "✅ Python standalone موجود في الـ cache"
+          cp "$CACHE_FILE" "$DEST"
+        else
+          echo "⬇️ تحميل Python standalone..."
+          wget -q --retry-connrefused --waitretry=10 --tries=5 \
+            --timeout=120 "$PYTHON_URL" -O "$DEST"
+          cp "$DEST" "$CACHE_FILE"
+          echo "✅ تم الحفظ في الـ cache"
+        fi
 
     - name: 🐍 إعداد Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
@@ -85,6 +111,17 @@ jobs:
         channel: 'stable'
         cache: 'pub'
 
+    # ✅ إضافة: تخزين مؤقت لـ Gradle لتسريع البناء
+    - name: 💾 Cache Gradle
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}
+        restore-keys: |
+          gradle-${{ runner.os }}-
+
     - name: 🔧 قبول Android licenses
       run: |
         flutter config --no-analytics
@@ -96,7 +133,6 @@ jobs:
         cd src
         BUILD_TYPE="${{ github.event.inputs.build_type || 'debug' }}"
         echo "📱 بناء APK نوع: $BUILD_TYPE"
-
         if [ "$BUILD_TYPE" = "release" ]; then
           flet build apk --release --verbose
         else
