@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "invoice-app"
+version = "1.0.0"
+description = "تطبيق فواتير ضريبية"
+requires-python = ">=3.11"
+dependencies = [
+    "flet==0.24.1",
+    "arabic-reshaper",
+    "python-bidi",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flet]
+app_name = "غانم سوفت - فواتير"
+app_version = "1.0.0"
+org = "com.ghanemsoft"
+bundle_id = "com.ghanemsoft.invoice"
