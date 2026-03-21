@@ -19,6 +19,11 @@ on:
           - debug
           - release
 
+# ✅ إضافة الصلاحيات اللازمة
+permissions:
+  contents: write
+  actions: write
+
 env:
   PYTHON_VERSION: '3.11'
   JAVA_VERSION: '17'
@@ -39,6 +44,7 @@ jobs:
     - name: 🗑️ حذف الـ Artifacts القديمة لتوفير المساحة
       uses: actions/github-script@v7
       with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const artifacts = await github.rest.actions.listArtifactsForRepo({
             owner: context.repo.owner,
