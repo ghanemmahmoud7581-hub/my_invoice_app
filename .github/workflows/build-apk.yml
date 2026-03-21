@@ -25,13 +25,15 @@ permissions:
 env:
   PYTHON_VERSION: '3.11'
   JAVA_VERSION: '17'
-  FLUTTER_VERSION: '3.41.5'
+  FLUTTER_VERSION: '3.24.0'
+  PYTHON_STANDALONE_URL: 'https://github.com/indygreg/python-build-standalone/releases/download/20231002/cpython-3.11.6+20231002-x86_64-unknown-linux-gnu-install_only.tar.gz'
+  PYTHON_STANDALONE_TAR: 'cpython-3.11.6+20231002-x86_64-unknown-linux-gnu-install_only.tar.gz'
 
 jobs:
   build-android-apk:
     name: بناء APK
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # ✅ زيادة المهلة
+    timeout-minutes: 90
 
     steps:
     - name: 📥 سحب الكود من المستودع
@@ -59,33 +61,45 @@ jobs:
           }
           console.log(`✅ تم حذف ${artifacts.data.artifacts.length} artifact قديمة`);
 
-    # ✅ إضافة: تخزين مؤقت لـ Python المستقل (الإصلاح الرئيسي)
-    - name: 💾 Cache Python standalone distributive
+    - name: 🧹 تنظيف مساحة القرص
+      run: |
+        echo "قبل التنظيف:"
+        df -h
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/share/boost
+        echo "بعد التنظيف:"
+        df -h
+
+    - name: 💾 Cache Python standalone (مفكوك)
+      id: cache-hostpython
       uses: actions/cache@v4
       with:
-        path: ~/.cache/serious_python
-        key: cpython-3.11.6-standalone-v1
+        path: ~/.cache/hostpython3.11
+        key: hostpython-3.11.6-extracted-v1
 
-    # ✅ إضافة: تحميل Python المستقل مسبقاً لتجنب انتهاء المهلة
-    - name: 🐍 تحميل Python standalone مسبقاً
+    - name: 🐍 تحميل وفك Python standalone
       run: |
-        PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20231002/cpython-3.11.6+20231002-x86_64-unknown-linux-gnu-install_only.tar.gz"
-        DEST="/tmp/cpython-3.11.6+20231002-x86_64-unknown-linux-gnu-install_only.tar.gz"
-        CACHE_DIR="$HOME/.cache/serious_python"
-        CACHE_FILE="$CACHE_DIR/$(basename $PYTHON_URL)"
+        DEST_TAR="/tmp/${{ env.PYTHON_STANDALONE_TAR }}"
+        CACHE_DIR="$HOME/.cache/hostpython3.11"
+        SYMLINK_DIR="/tmp/hostpython3.11_CACHED"
 
-        mkdir -p "$CACHE_DIR"
-
-        if [ -f "$CACHE_FILE" ]; then
-          echo "✅ Python standalone موجود في الـ cache"
-          cp "$CACHE_FILE" "$DEST"
+        if [ -d "$CACHE_DIR/python" ]; then
+          echo "✅ Python مفكوك موجود في الـ cache"
         else
           echo "⬇️ تحميل Python standalone..."
           wget -q --retry-connrefused --waitretry=10 --tries=5 \
-            --timeout=120 "$PYTHON_URL" -O "$DEST"
-          cp "$DEST" "$CACHE_FILE"
+            --timeout=180 "${{ env.PYTHON_STANDALONE_URL }}" -O "$DEST_TAR"
+          echo "📦 فك الضغط وحفظه في الـ cache..."
+          mkdir -p "$CACHE_DIR"
+          tar -xzf "$DEST_TAR" -C "$CACHE_DIR"
           echo "✅ تم الحفظ في الـ cache"
         fi
+
+        # نسخ للمسار المتوقع من serious_python
+        echo "📋 نسخ Python إلى /tmp..."
+        cp -r "$CACHE_DIR" "$SYMLINK_DIR"
 
     - name: 🐍 إعداد Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
@@ -96,6 +110,7 @@ jobs:
     - name: 📦 تثبيت المكتبات
       run: |
         python -m pip install --upgrade pip setuptools wheel
+        pip install flet arabic-reshaper python-bidi
         pip install -e ./src
 
     - name: ☕ إعداد Java ${{ env.JAVA_VERSION }}
@@ -104,14 +119,6 @@ jobs:
         distribution: 'temurin'
         java-version: ${{ env.JAVA_VERSION }}
 
-    - name: 🎯 إعداد Flutter ${{ env.FLUTTER_VERSION }}
-      uses: subosito/flutter-action@v2
-      with:
-        flutter-version: ${{ env.FLUTTER_VERSION }}
-        channel: 'stable'
-        cache: 'pub'
-
-    # ✅ إضافة: تخزين مؤقت لـ Gradle لتسريع البناء
     - name: 💾 Cache Gradle
       uses: actions/cache@v4
       with:
@@ -121,6 +128,13 @@ jobs:
         key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}
         restore-keys: |
           gradle-${{ runner.os }}-
+
+    - name: 🎯 إعداد Flutter ${{ env.FLUTTER_VERSION }}
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ env.FLUTTER_VERSION }}
+        channel: 'stable'
+        cache: 'pub'
 
     - name: 🔧 قبول Android licenses
       run: |
