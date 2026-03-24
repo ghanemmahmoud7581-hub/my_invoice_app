@@ -1,0 +1,3 @@
+flet
+arabic-reshaper
+python-bidi
