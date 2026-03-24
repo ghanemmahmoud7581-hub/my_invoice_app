@@ -2,7 +2,8 @@ import flet as ft
 from datetime import datetime
 import random
 import platform
-import subprocess
+import os
+import urllib.parse
 
 
 # ════════════════════════════════════════════════════════
@@ -72,36 +73,33 @@ def build_receipt(invoice_no: str, client: str, items: list, date: str) -> str:
     return "\n".join(sections)
 
 
-def print_via_intent(receipt_text: str):
-    import os
-    is_android = hasattr(ft, 'app') and (
+def is_android() -> bool:
+    """كشف بيئة Android بشكل موثوق"""
+    return (
         os.path.exists("/system/build.prop") or
         os.path.exists("/system/app") or
-        "android" in platform.platform().lower()    
+        os.path.exists("/data/data")
     )
-    if is_android:
+
+
+def print_via_intent(page: ft.Page, receipt_text: str):
+    """
+    إرسال الفاتورة للطباعة:
+    - Android: عبر page.launch_url بـ deep link
+    - كمبيوتر: معاينة نصية
+    """
+    if is_android():
         try:
-            import subprocess
-            cmd = [
-                "am", "start",
-                "-a", "android.intent.action.SEND",
-                "-t", "text/plain",
-                "--es", "android.intent.extra.TEXT", receipt_text,
-                "-p", "com.erchannel.escposprinter",
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                return True, "تم إرسال الفاتورة للطابعة ✅"
-            else:
-                return False, f"خطأ في الإرسال: {result.stderr}"
-        except FileNotFoundError:
-            return False, "تأكد من تثبيت تطبيق ESC POS Printer"
+            encoded = urllib.parse.quote(receipt_text, safe='')
+            # deep link لتطبيق ESC POS Printer
+            url = f"escposprinter://print?text={encoded}"
+            page.launch_url(url)
+            return True, "تم إرسال الفاتورة للطابعة ✅"
         except Exception as ex:
             return False, f"خطأ: {ex}"
     else:
         # كمبيوتر — معاينة نصية فقط
-        return None, receipt_text    
-          
+        return None, receipt_text
 
 
 # ════════════════════════════════════════════════════════
@@ -224,7 +222,7 @@ def main(page: ft.Page):
             date=datetime.now().strftime("%Y-%m-%d"),
         )
 
-        ok, msg = print_via_intent(receipt)
+        ok, msg = print_via_intent(page, receipt)
 
         if ok is None:
             # كمبيوتر — اعرض المعاينة النصية
