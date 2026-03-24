@@ -73,27 +73,35 @@ def build_receipt(invoice_no: str, client: str, items: list, date: str) -> str:
 
 
 def print_via_intent(receipt_text: str):
-    """
-    إرسال الفاتورة لتطبيق ESC POS Printer عبر Android Intent
-    يعمل فقط على Android — على الكمبيوتر يعرض النص فقط
-    """
-    if platform.system() == "Linux" and "ANDROID_ROOT" in __import__("os").environ:
-        # Android — نستخدم am start لفتح تطبيق ESC POS
+    import os
+    is_android = hasattr(ft, 'app') and (
+        os.path.exists("/system/build.prop") or
+        os.path.exists("/system/app") or
+        "android" in platform.platform().lower()    
+    )
+    if is_android:
         try:
+            import subprocess
             cmd = [
                 "am", "start",
                 "-a", "android.intent.action.SEND",
                 "-t", "text/plain",
                 "--es", "android.intent.extra.TEXT", receipt_text,
-                "-p", "com.erchannel.escposprinter",  # package تطبيق ESC POS Printer
+                "-p", "com.erchannel.escposprinter",
             ]
-            subprocess.Popen(cmd)
-            return True, "تم إرسال الفاتورة للطابعة ✅"
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                return True, "تم إرسال الفاتورة للطابعة ✅"
+            else:
+                return False, f"خطأ في الإرسال: {result.stderr}"
+        except FileNotFoundError:
+            return False, "تأكد من تثبيت تطبيق ESC POS Printer"
         except Exception as ex:
             return False, f"خطأ: {ex}"
     else:
         # كمبيوتر — معاينة نصية فقط
-        return None, receipt_text
+        return None, receipt_text    
+          
 
 
 # ════════════════════════════════════════════════════════
